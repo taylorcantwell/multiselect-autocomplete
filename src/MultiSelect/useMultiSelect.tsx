@@ -1,46 +1,79 @@
-import React, { useReducer, useRef } from 'react';
+import React, { useEffect, useMemo, useReducer, useRef } from 'react';
 
-export const useMultiSelect = (
-  options: Omit<MultiSelectState['options'], 'index'>
-) => {
+export const useMultiSelect = (options: MultiSelectOption[]) => {
   const [state, _dispatch] = useReducer(reducer, {
     options,
     open: false,
-    activeIndex: -1,
+    activeOption: null,
     selectedOptions: [],
     input: '',
   });
+  console.log(
+    '🚀 ~ file: useMultiSelect.tsx ~ line 11 ~ useMultiSelect ~ state',
+    state
+  );
 
   const dispatch = new Dispatcher(_dispatch);
-  const filteredOptions = state.options.filter((option) => {
-    return option.label.toLowerCase().includes(state.input.toLowerCase());
-  });
+  const filteredOptions = useMemo(() => {
+    return state.options.filter((option) => {
+      return option.label.toLowerCase().includes(state.input.toLowerCase());
+    });
+  }, [state.input, state.options]);
+
+  const selectedLabels = state.selectedOptions
+    .map((selectedOption) => {
+      return state.options.find((option) => option.value === selectedOption)
+        ?.label;
+    })
+    .join(', ');
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const filteredOptionsRef = useRef(filteredOptions.length);
+
+  useEffect(
+    function onFilterSelectFirstOption() {
+      if (filteredOptions.length !== filteredOptionsRef.current) {
+        filteredOptionsRef.current = filteredOptions.length;
+
+        const firstOption = filteredOptions[0];
+        dispatch.setActive(firstOption?.value ?? null);
+      }
+    },
+    [filteredOptions, filteredOptionsRef]
+  );
 
   const getButtonProps = () => {
     return {
+      'aria-expanded': state.open,
       onClick: () => {
         dispatch.toggle();
         inputRef.current?.focus();
       },
-      'aria-expanded': state.open,
+      onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => {
+        if (!state.open) {
+          dispatch.open();
+          inputRef.current?.focus();
+        }
+      },
       onBlur: () => dispatch.close(),
     };
   };
 
-  const getOptionProps = (index: number, value: string) => {
+  const getOptionProps = (value: MultiSelectOptionValue) => {
+    const isSelected = state.selectedOptions.includes(value);
+    const isActive = state.activeOption === value;
+
     return {
-      id: index,
-      'aria-selected': state.selectedOptions.includes(index),
-      'data-active': state.activeIndex === index,
+      id: value,
+      'aria-selected': isSelected,
+      'data-active': isActive,
       onMouseDown: (event: React.MouseEvent<HTMLLIElement>) => {
         event.preventDefault();
-        dispatch.setSelected(index);
+        dispatch.setSelected(value);
         dispatch.setInput('');
       },
       onMouseEnter: () => {
-        dispatch.setActive(index);
+        dispatch.setActive(value);
       },
     };
   };
@@ -48,7 +81,7 @@ export const useMultiSelect = (
   const getInputProps = () => {
     return {
       'aria-expanded': state.open,
-      'aria-activedescendant': state.activeIndex,
+      'aria-activedescendant': state.activeOption,
       value: state.input,
       ref: inputRef,
       onChange: (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -67,41 +100,59 @@ export const useMultiSelect = (
 
         if (invalidKey) return;
 
-        dispatch.open();
+        if (!state.open) {
+          dispatch.open();
+        }
 
         switch (event.code) {
-          case Keys.ArrowDown:
-            if (state.activeIndex < state.options.length - 1) {
-              dispatch.targetDown();
+          case Keys.ArrowDown: {
+            const lastOption = filteredOptions[filteredOptions.length - 1];
+            const isNotLastOption = lastOption.value !== state.activeOption;
+
+            if (isNotLastOption) {
+              dispatch.targetDown(filteredOptions);
             }
             break;
+          }
 
-          case Keys.ArrowUp:
-            if (state.activeIndex > 0) {
-              dispatch.targetUp();
+          case Keys.ArrowUp: {
+            const firstOption = filteredOptions[0].value;
+            const isNotFirstOption = firstOption !== state.activeOption;
+
+            if (isNotFirstOption) {
+              dispatch.targetUp(filteredOptions);
             }
             break;
+          }
 
-          case Keys.Enter:
-            if (state.activeIndex >= 0 && state.open) {
-              dispatch.setSelected(state.activeIndex);
+          case Keys.Enter: {
+            if (state.activeOption && state.open) {
+              dispatch.setSelected(state?.activeOption);
               dispatch.close();
-              return;
             }
             break;
+          }
 
-          case Keys.Escape:
+          case Keys.Escape: {
             dispatch.close();
             break;
+          }
 
-          case Keys.Tab:
+          case Keys.Tab: {
             dispatch.close();
             break;
+          }
 
-          case Keys.Backspace:
-            if (state.input === '' && state.selectedOptions.length > 0) {
-              dispatch.setSelected(state.selectedOptions.length - 1);
+          case Keys.Backspace: {
+            const shouldDeleteLastSelectedOption =
+              state.input === '' && state.selectedOptions.length > 0;
+
+            if (shouldDeleteLastSelectedOption) {
+              const lastSelectedOption =
+                state.selectedOptions[state.selectedOptions.length - 1];
+              dispatch.setSelected(lastSelectedOption);
             }
+          }
 
           default:
             return;
@@ -112,9 +163,7 @@ export const useMultiSelect = (
 
   return {
     open: state.open,
-    selectedOptions: state.selectedOptions
-      .map((option) => state.options[option].label)
-      .join(', '),
+    selectedLabels,
     filteredOptions,
     getInputProps,
     getOptionProps,
@@ -122,14 +171,18 @@ export const useMultiSelect = (
   };
 };
 
-export type MultiSelectState = {
-  options: {
-    label: string;
-    value: string;
-  }[];
+export type MultiSelectOption = {
+  label: string;
+  value: MultiSelectOptionValue;
+};
+
+type MultiSelectOptionValue = number | string;
+
+type MultiSelectState = {
+  options: MultiSelectOption[];
   open: boolean;
-  selectedOptions: number[];
-  activeIndex: number;
+  selectedOptions: MultiSelectOptionValue[];
+  activeOption: MultiSelectOptionValue | null;
   input: string;
 };
 
@@ -141,24 +194,30 @@ export type MultiSelectAction =
   | {
       type: 'CLOSE';
     }
-  | {
-      type: 'TARGET_DOWN';
-    }
-  | {
-      type: 'TARGET_UP';
-    }
+  | TargetUpDispatch
+  | TargetDownDispatch
   | SetSeletedDispatch
   | SetActiveDispatch
   | SetInputDispatch;
 
+type TargetUpDispatch = {
+  type: 'TARGET_UP';
+  payload: MultiSelectOption[];
+};
+
+type TargetDownDispatch = {
+  type: 'TARGET_DOWN';
+  payload: MultiSelectOption[];
+};
+
 type SetSeletedDispatch = {
   type: 'SET_SELECTED';
-  payload: number;
+  payload: MultiSelectOptionValue;
 };
 
 type SetActiveDispatch = {
   type: 'SET_ACTIVE';
-  payload: number;
+  payload: MultiSelectOptionValue;
 };
 
 type SetInputDispatch = {
@@ -172,46 +231,75 @@ const reducer = (
 ): MultiSelectState => {
   switch (action.type) {
     case 'SET_SELECTED':
-      const isAlreadySelected = state.selectedOptions.some(
+      const isOptionAlreadySelected = state.selectedOptions.some(
         (selectedOption) => selectedOption === action.payload
       );
 
-      const selectedOptions = isAlreadySelected
-        ? state.selectedOptions.filter(
-            (selectedOption) => selectedOption !== action.payload
-          )
-        : [...state.selectedOptions, action.payload];
+      if (isOptionAlreadySelected) {
+        const newSelectedOptions = state.selectedOptions.filter(
+          (selectedOption) => selectedOption !== action.payload
+        );
+
+        return {
+          ...state,
+          selectedOptions: newSelectedOptions,
+        };
+      }
 
       return {
         ...state,
-        selectedOptions,
+        selectedOptions: [...state.selectedOptions, action.payload],
       };
 
     case 'SET_ACTIVE':
       return {
         ...state,
-        activeIndex: action.payload,
+        activeOption: action.payload,
       };
 
-    case 'TARGET_UP':
+    case 'TARGET_UP': {
+      const filteredOptions = action.payload;
+      const activeOption = getNewActiveOption(
+        state.activeOption,
+        filteredOptions,
+        'up'
+      );
+
       return {
         ...state,
-        activeIndex: state.activeIndex - 1,
+        activeOption,
       };
-    case 'TARGET_DOWN':
+    }
+
+    case 'TARGET_DOWN': {
+      const filteredOptions = action.payload;
+      const activeOption = getNewActiveOption(
+        state.activeOption,
+        filteredOptions,
+        'down'
+      );
+
       return {
         ...state,
-        activeIndex: state.activeIndex + 1,
+        activeOption,
       };
+    }
+
     case 'OPEN':
+      console.log('OPEN');
+      const firstOption = state.options[0].value;
+
       return {
         ...state,
+        activeOption: firstOption,
         open: true,
       };
     case 'CLOSE':
-      return { ...state, activeIndex: -1, open: false };
+      return { ...state, open: false };
+
     case 'TOGGLE':
       return { ...state, open: !state.open };
+
     case 'SET_INPUT':
       return {
         ...state,
@@ -226,17 +314,17 @@ const reducer = (
 class Dispatcher {
   constructor(private dispatch: React.Dispatch<MultiSelectAction>) {}
 
-  setSelected = (payload: SetSeletedDispatch['payload']) => {
+  setSelected = (payload: MultiSelectOptionValue) => {
     this.dispatch({ type: 'SET_SELECTED', payload });
   };
-  setActive = (payload: SetActiveDispatch['payload']) => {
+  setActive = (payload: MultiSelectOptionValue) => {
     this.dispatch({ type: 'SET_ACTIVE', payload });
   };
-  targetUp = () => {
-    this.dispatch({ type: 'TARGET_UP' });
+  targetUp = (payload: MultiSelectOption[]) => {
+    this.dispatch({ type: 'TARGET_UP', payload });
   };
-  targetDown = () => {
-    this.dispatch({ type: 'TARGET_DOWN' });
+  targetDown = (payload: MultiSelectOption[]) => {
+    this.dispatch({ type: 'TARGET_DOWN', payload });
   };
   open = () => {
     this.dispatch({ type: 'OPEN' });
@@ -262,3 +350,18 @@ enum Keys {
   Tab = 'Tab',
   Backspace = 'Backspace',
 }
+
+const getNewActiveOption = (
+  activeOption: MultiSelectOptionValue,
+  filteredOptions: MultiSelectOption[],
+  direction: 'up' | 'down'
+) => {
+  const currentIndex = filteredOptions.findIndex((option) => {
+    return option.value === activeOption;
+  });
+  const movement = direction === 'up' ? -1 : 1;
+  const newIndex = currentIndex + movement;
+  const newActiveOption = filteredOptions[newIndex].value;
+
+  return newActiveOption;
+};

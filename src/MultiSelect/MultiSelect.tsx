@@ -1,10 +1,7 @@
-import { useMultiSelect } from './useMultiSelect';
+import { type MultiSelectOption, useMultiSelect } from './useMultiSelect';
 
 export type MultiSelectProps = {
-  options: {
-    label: string;
-    value: string;
-  }[];
+  options: MultiSelectOption[];
 };
 
 export const MultiSelect = ({ options }: MultiSelectProps) => {
@@ -14,7 +11,7 @@ export const MultiSelect = ({ options }: MultiSelectProps) => {
     getInputProps,
     getOptionProps,
     getButtonProps,
-    selectedOptions,
+    selectedLabels,
   } = useMultiSelect(options);
 
   return (
@@ -28,14 +25,14 @@ export const MultiSelect = ({ options }: MultiSelectProps) => {
         />
         <div className="flex h-full p-2 grid-stack">
           <span className="flex items-center h-full p-2 border-r-2 w-min whitespace-nowrap">
-            {selectedOptions}
+            {selectedLabels}
           </span>
           <input
             {...getInputProps()}
-            className="w-full ml-2 border-none outline-none background-transparent"
-            aria-autocomplete="list"
-            role="combobox"
             aria-controls="owned_listbox"
+            aria-autocomplete="list"
+            className="w-full ml-2 border-none outline-none background-transparent"
+            role="combobox"
           />
         </div>
       </div>
@@ -47,11 +44,11 @@ export const MultiSelect = ({ options }: MultiSelectProps) => {
         role="listbox"
         id="owned_listbox"
       >
-        {filteredOptions.map((option, index) => (
+        {filteredOptions.map((option) => (
           <li
-            {...getOptionProps(index, option.value)}
-            className="data-[filtered=true]:visually-hidden"
-            key={option.value + option.label}
+            {...getOptionProps(option.value)}
+            className="data-[active=true]:bg-blue-500"
+            key={option.value}
             role="option"
           >
             {option.label}

@@ -6,6 +6,7 @@ function App() {
       <MultiSelect
         options={[
           { label: 'one', value: 'one' },
+          { label: 'on', value: 'on' },
           { label: 'two', value: 'two' },
         ]}
       />
