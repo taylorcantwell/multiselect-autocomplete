@@ -1,10 +1,14 @@
-import { type MultiSelectOption, useMultiSelect } from './useMultiSelect';
+import {type MultiSelectOnChange,
+  type MultiSelectOption,
+  useMultiSelect,
+} from './useMultiSelect';
 
 export type MultiSelectProps = {
   options: MultiSelectOption[];
+  onChange?: MultiSelectOnChange;
 };
 
-export const MultiSelect = ({ options }: MultiSelectProps) => {
+export const MultiSelect = ({ options, onChange }: MultiSelectProps) => {
   const {
     open,
     filteredOptions,
@@ -12,7 +16,7 @@ export const MultiSelect = ({ options }: MultiSelectProps) => {
     getOptionProps,
     getButtonProps,
     selectedLabels,
-  } = useMultiSelect(options);
+  } = useMultiSelect(options, onChange);
 
   return (
     <div className="relative">

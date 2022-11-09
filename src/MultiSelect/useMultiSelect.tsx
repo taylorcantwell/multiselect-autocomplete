@@ -1,6 +1,19 @@
-import React, { useEffect, useMemo, useReducer, useRef } from 'react';
+import {
+  Dispatch,
+  SetStateAction,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+} from 'react';
 
-export const useMultiSelect = (options: MultiSelectOption[]) => {
+
+export type MultiSelectOnChange = Dispatch<SetStateAction<MultiSelectState | undefined>>
+
+export const useMultiSelect = (
+  options: MultiSelectOption[],
+  onChange?: MultiSelectOnChange
+) => {
   const [state, _dispatch] = useReducer(reducer, {
     options,
     open: false,
@@ -8,15 +21,14 @@ export const useMultiSelect = (options: MultiSelectOption[]) => {
     selectedOptions: [],
     input: '',
   });
-  console.log(
-    '🚀 ~ file: useMultiSelect.tsx ~ line 11 ~ useMultiSelect ~ state',
-    state
-  );
 
-  const dispatch = new Dispatcher(_dispatch);
+  const dispatch = useMemo(() => new Dispatcher(_dispatch), [_dispatch]);
   const filteredOptions = useMemo(() => {
     return state.options.filter((option) => {
-      return option.label.toLowerCase().includes(state.input.toLowerCase());
+      const optionLabel = option.label.toLowerCase().trim();
+      const input = state.input.toLowerCase().trim();
+
+      return optionLabel.includes(input);
     });
   }, [state.input, state.options]);
 
@@ -28,9 +40,10 @@ export const useMultiSelect = (options: MultiSelectOption[]) => {
     .join(', ');
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const activeOptionRef = useRef<HTMLLIElement>(null);
   const filteredOptionsRef = useRef(filteredOptions.length);
 
-  useEffect(
+  useLayoutEffect(
     function onFilterSelectFirstOption() {
       if (filteredOptions.length !== filteredOptionsRef.current) {
         filteredOptionsRef.current = filteredOptions.length;
@@ -39,13 +52,32 @@ export const useMultiSelect = (options: MultiSelectOption[]) => {
         dispatch.setActive(firstOption?.value ?? null);
       }
     },
-    [filteredOptions, filteredOptionsRef]
+    [filteredOptions, filteredOptionsRef, dispatch]
+  );
+
+  useLayoutEffect(
+    function scrollActiveOptionIntoVoew() {
+      activeOptionRef.current?.scrollIntoView({
+        behavior: 'auto',
+        block: 'nearest',
+      });
+    },
+    [state.activeOption, activeOptionRef]
+  );
+
+  useLayoutEffect(
+    function onChangeListener() {
+      console.log(state);
+      onChange && onChange(state);
+    },
+    [state]
   );
 
   const getButtonProps = () => {
     return {
       'aria-expanded': state.open,
-      onClick: () => {
+      onMouseDown: (event: React.MouseEvent<HTMLButtonElement>) => {
+        event.preventDefault();
         dispatch.toggle();
         inputRef.current?.focus();
       },
@@ -55,7 +87,6 @@ export const useMultiSelect = (options: MultiSelectOption[]) => {
           inputRef.current?.focus();
         }
       },
-      onBlur: () => dispatch.close(),
     };
   };
 
@@ -67,6 +98,7 @@ export const useMultiSelect = (options: MultiSelectOption[]) => {
       id: value,
       'aria-selected': isSelected,
       'data-active': isActive,
+      ref: isActive ? activeOptionRef : null,
       onMouseDown: (event: React.MouseEvent<HTMLLIElement>) => {
         event.preventDefault();
         dispatch.setSelected(value);
@@ -86,9 +118,6 @@ export const useMultiSelect = (options: MultiSelectOption[]) => {
       ref: inputRef,
       onChange: (event: React.ChangeEvent<HTMLInputElement>) => {
         dispatch.setInput(event.target.value);
-      },
-      onFocus: () => {
-        dispatch.open();
       },
       onBlur: () => {
         dispatch.close();
@@ -128,17 +157,11 @@ export const useMultiSelect = (options: MultiSelectOption[]) => {
           case Keys.Enter: {
             if (state.activeOption && state.open) {
               dispatch.setSelected(state?.activeOption);
-              dispatch.close();
             }
             break;
           }
 
           case Keys.Escape: {
-            dispatch.close();
-            break;
-          }
-
-          case Keys.Tab: {
             dispatch.close();
             break;
           }
@@ -178,7 +201,7 @@ export type MultiSelectOption = {
 
 type MultiSelectOptionValue = number | string;
 
-type MultiSelectState = {
+export type MultiSelectState = {
   options: MultiSelectOption[];
   open: boolean;
   selectedOptions: MultiSelectOptionValue[];
@@ -229,6 +252,7 @@ const reducer = (
   state: MultiSelectState,
   action: MultiSelectAction
 ): MultiSelectState => {
+  console.log(action.type);
   switch (action.type) {
     case 'SET_SELECTED':
       const isOptionAlreadySelected = state.selectedOptions.some(
@@ -347,7 +371,6 @@ enum Keys {
   ArrowDown = 'ArrowDown',
   Digit = 'Digit',
   Key = 'Key',
-  Tab = 'Tab',
   Backspace = 'Backspace',
 }
 
